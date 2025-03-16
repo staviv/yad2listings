@@ -71,7 +71,7 @@ class VehicleScraper:
             # "price": "110000-190000",
             # "km": "-1-60000",
             # # "km": "-1-50000",
-            "hand": "0-2",
+            # "hand": "0-10",
             # "imgOnly": "1",
             "page": page_num
         }
