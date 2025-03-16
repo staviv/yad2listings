@@ -7,7 +7,7 @@ import logging
 import yad2_parser
 
 class VehicleScraper:
-    def __init__(self, output_dir, manufacturer=32, model=10449):
+    def __init__(self, output_dir, manufacturer=38, model=10514):
         """
         Initialize the scraper with output directory and vehicle parameters
         
@@ -160,7 +160,7 @@ def main():
     output_dir = "scraped_vehicles"  # Replace with your desired output directory
     # VehicleScraper(output_dir, manufacturer=32, model=1337).scrape_pages() # Nissan
     # return
-    VehicleScraper(output_dir, manufacturer=19, model=12894).scrape_pages(max_page=20) # bz4x
+    # VehicleScraper(output_dir, manufacturer=19, model=12894).scrape_pages(max_page=20) # bz4x
     # VehicleScraper(output_dir, manufacturer=32, model=10449).scrape_pages(max_page=20) # Nissan
     # VehicleScraper(output_dir, manufacturer=21, model=10283).scrape_pages(max_page=1) 
     # VehicleScraper(output_dir, manufacturer=41, model=11579).scrape_pages(max_page=5) # ID.4

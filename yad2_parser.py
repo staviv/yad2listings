@@ -152,5 +152,5 @@ if __name__ == "__main__":
     # Upload to Google Drive
     output_file = f"{Path(directory_path).name}_summary.csv"
     output_path = os.path.join(directory_path, output_file)
-    upload_drive.upload_to_sheet(output_path)
+    # upload_drive.upload_to_sheet(output_path)
     os.unlink(output_path)
