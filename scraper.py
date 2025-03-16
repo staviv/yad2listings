@@ -66,13 +66,7 @@ class VehicleScraper:
         params = {
             "manufacturer": self.manufacturer,
             "model": self.model,
-            # "carFamilyType": "5,10",
-            # "year": "2022--1",
-            # "price": "110000-190000",
-            # "km": "-1-60000",
-            # # "km": "-1-50000",
-            # "hand": "0-10",
-            # "imgOnly": "1",
+            # No hand filter to get all vehicles
             "page": page_num
         }
         return f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"

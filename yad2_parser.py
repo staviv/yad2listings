@@ -90,8 +90,7 @@ def process_vehicle_data(json_list: List[Dict], listing_type: str, output_file: 
                 writer.writerow(row)
             except KeyError as e:
                 print(f"Skipping item due to missing key: {e}")
-                print (item)
-                exit(-1)
+                print(item)
             except Exception as e:
                 print(f"Error processing item: {e}")
 
@@ -127,13 +126,14 @@ def process_directory(directory_path: str) -> None:
                         process_vehicle_data(private_list, 'private', output_path, mode)
                         print(f"Processed {len(private_list)} private listings")
                     
-                    # Process private listings
+                    # Process solo listings
                     private_list = listings_data.get('solo', [])
                     if private_list:
                         mode = 'a' if os.path.exists(output_path) else 'w'
                         process_vehicle_data(private_list, 'solo', output_path, mode)
                         print(f"Processed {len(private_list)} solo listings")
                     
+                    # Process platinum listings
                     private_list = listings_data.get('platinum', [])
                     if private_list:
                         mode = 'a' if os.path.exists(output_path) else 'w'
@@ -144,13 +144,3 @@ def process_directory(directory_path: str) -> None:
                 print(f"Error processing {filename}: {e}")
     
     print(f"Output saved to: {output_path}")
-
-if __name__ == "__main__":
-    directory_path = "scraped_vehicles"
-    process_directory(directory_path)
-    
-    # Upload to Google Drive
-    output_file = f"{Path(directory_path).name}_summary.csv"
-    output_path = os.path.join(directory_path, output_file)
-    # upload_drive.upload_to_sheet(output_path)
-    os.unlink(output_path)

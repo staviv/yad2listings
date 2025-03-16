@@ -1,4 +1,4 @@
-# vehicle_price_analyzer.py
+# vehicle_analyzer.py
 """
 Vehicle Price Analyzer - A tool to scrape, process and visualize vehicle price data.
 
@@ -17,6 +17,7 @@ Options:
     --max-pages NUM       Maximum number of pages to scrape (default: 25)
     --skip-scrape         Skip scraping and use existing data
     --port NUM            Port to run the web server on (default: 8050)
+    --list-models         List all available manufacturers and models
 """
 
 import os
@@ -26,14 +27,16 @@ from pathlib import Path
 import pandas as pd
 from datetime import datetime
 import logging
+import json
 
 # Import the scraper modules
 from scraper import VehicleScraper
 import yad2_parser
+import vehicle_models
 
 # For web visualization
 import dash
-from dash import dcc, html, Input, Output, State
+from dash import dcc, html, Input, Output, State, callback_context
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
@@ -70,6 +73,8 @@ def parse_arguments():
                         help='Skip scraping and use existing data')
     parser.add_argument('--port', type=int, default=8050,
                         help='Port to run the web server on')
+    parser.add_argument('--list-models', action='store_true',
+                        help='List all available manufacturers and models')
     return parser.parse_args()
 
 def scrape_data(output_dir, manufacturer, model, max_pages):
@@ -127,6 +132,10 @@ def load_data(csv_path):
         
         # Extract year from production date for easier filtering
         df['productionYear'] = df['productionDate'].dt.year
+        df['productionMonth'] = df['productionDate'].dt.month
+        
+        # Format production date for display
+        df['productionDateFormatted'] = df['productionDate'].dt.strftime('%Y-%m-%d')
         
         logger.info(f"Loaded {len(df)} vehicle records")
         return df
@@ -252,6 +261,9 @@ def define_dashboard_styles():
                 'color': '#7f8c8d',
                 'margin': '0'
             }
+        },
+        'tabs': {
+            'margin-bottom': '20px'
         }
     }
 
@@ -401,8 +413,8 @@ def fit_trend_curve(x_data, y_data):
     
     return None, None, None
 
-def create_scatter_plot(filtered_df):
-    """Create scatter plot with trend line
+def create_scatter_plot_by_date(filtered_df):
+    """Create scatter plot with trend line by production date
     
     Args:
         filtered_df: DataFrame with filtered vehicle data
@@ -414,24 +426,20 @@ def create_scatter_plot(filtered_df):
     newest_date = filtered_df['productionDate'].max()
     filtered_df['days_since_newest'] = (newest_date - filtered_df['productionDate']).dt.days
     
-    # Calculate display dates
-    today = pd.Timestamp.today().normalize()
-    filtered_df['display_date'] = today - pd.to_timedelta(filtered_df['days_since_newest'], unit='D')
-    
     # Create basic scatter plot
     fig = px.scatter(
         filtered_df, 
-        x='display_date', 
+        x='productionDate',  # Using actual production date
         y='price',
         color='km_per_year',
         size_max=8,
         color_continuous_scale='viridis',
         range_color=[0, filtered_df['km_per_year'].quantile(0.95)],
-        hover_data=['model', 'subModel', 'hand', 'km', 'city', 'productionDate', 'link'],
-        labels={'display_date': 'Date', 
+        hover_data=['model', 'subModel', 'hand', 'km', 'city', 'productionDateFormatted', 'link'],
+        labels={'productionDate': 'Production Date', 
                'price': 'Price (₪)', 
                'km_per_year': 'Kilometers per Year'},
-        title=f'Vehicle Prices by Age ({len(filtered_df)} vehicles)'
+        title=f'Vehicle Prices by Production Date ({len(filtered_df)} vehicles)'
     )
     
     # Create custom data for hover and click functionality
@@ -441,7 +449,7 @@ def create_scatter_plot(filtered_df):
         filtered_df['hand'], 
         filtered_df['km'], 
         filtered_df['city'],
-        filtered_df['productionDate'],
+        filtered_df['productionDateFormatted'],
         filtered_df['link']
     ))
     
@@ -475,7 +483,8 @@ def create_scatter_plot(filtered_df):
             title_font=dict(size=14),
             tickfont=dict(size=12),
             gridcolor='#eee',
-            autorange="reversed"
+            dtick="M3",  # 3-month intervals
+            tickformat="%Y-%m"  # Year-month format
         ),
         yaxis=dict(
             title_font=dict(size=14),
@@ -535,7 +544,7 @@ def create_scatter_plot(filtered_df):
             curve_style = curve_styles.get(curve_type, 'solid')
             
             # Convert x_curve from days to actual dates for plotting
-            curve_dates = today - pd.to_timedelta(x_curve, unit='D')
+            curve_dates = newest_date - pd.to_timedelta(x_curve, unit='D')
             
             fig.add_trace(go.Scatter(
                 x=curve_dates,
@@ -545,6 +554,159 @@ def create_scatter_plot(filtered_df):
                 line=dict(color=curve_color, width=3, dash=curve_style),
                 hoverinfo='none'
             ))
+    
+    return fig
+
+def create_scatter_plot_by_km(filtered_df):
+    """Create scatter plot with trend line by kilometers
+    
+    Args:
+        filtered_df: DataFrame with filtered vehicle data
+        
+    Returns:
+        plotly.graph_objects.Figure: The created figure
+    """
+    # Create basic scatter plot
+    fig = px.scatter(
+        filtered_df, 
+        x='km',
+        y='price',
+        color='number_of_years',
+        size_max=8,
+        color_continuous_scale='viridis',
+        range_color=[0, filtered_df['number_of_years'].quantile(0.95)],
+        hover_data=['model', 'subModel', 'hand', 'productionDateFormatted', 'city', 'link'],
+        labels={'km': 'Kilometers', 
+               'price': 'Price (₪)', 
+               'number_of_years': 'Vehicle Age (Years)'},
+        title=f'Vehicle Prices by Kilometers ({len(filtered_df)} vehicles)'
+    )
+    
+    # Create custom data for hover and click functionality
+    custom_data = np.column_stack((
+        filtered_df['model'], 
+        filtered_df['subModel'], 
+        filtered_df['hand'], 
+        filtered_df['productionDateFormatted'], 
+        filtered_df['city'],
+        filtered_df['link']
+    ))
+    
+    # Update trace properties
+    fig.update_traces(
+        marker=dict(
+            size=8,
+            opacity=0.8,
+            line=dict(width=1, color='DarkSlateGrey')
+        ),
+        customdata=custom_data,
+        hovertemplate='<b>%{customdata[0]} %{customdata[1]}</b><br>' +
+                     'Price: ₪%{y:,.0f}<br>' +
+                     'Kilometers: %{x:,.0f}<br>' +
+                     'Production Date: %{customdata[3]}<br>' +
+                     'Hand: %{customdata[2]}<br>' +
+                     'City: %{customdata[4]}<br>' +
+                     '<b>👆 Click to view ad</b>'
+    )
+    
+    # Improve layout and appearance
+    fig.update_layout(
+        clickmode='event+select',
+        hoverdistance=100,
+        hovermode='closest',
+        dragmode='zoom',
+        plot_bgcolor='rgba(240,240,240,0.2)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(family="Roboto, sans-serif"),
+        xaxis=dict(
+            title_font=dict(size=14),
+            tickfont=dict(size=12),
+            gridcolor='#eee',
+            tickformat=",d"  # Comma-separated thousands
+        ),
+        yaxis=dict(
+            title_font=dict(size=14),
+            tickfont=dict(size=12),
+            gridcolor='#eee'
+        ),
+        title=dict(
+            font=dict(size=16)
+        ),
+        legend=dict(
+            title_font=dict(size=13),
+            font=dict(size=11)
+        ),
+        coloraxis_colorbar=dict(
+            title="Age (Years)",
+            title_font=dict(size=13),
+            tickfont=dict(size=11)
+        ),
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+    
+    # Add trend curve if we have enough data points
+    if len(filtered_df) > 1:
+        try:
+            # Fit a polynomial regression line
+            from scipy.stats import linregress
+            from scipy import optimize
+            
+            # Sort by kilometers for the trend line
+            sorted_df = filtered_df.sort_values('km')
+            x = sorted_df['km'].values
+            y = sorted_df['price'].values
+            
+            # Try to fit a polynomial regression
+            try:
+                # Try exponential decay with offset: a * exp(-b * x) + c
+                def exp_decay_with_offset(x, a, b, c):
+                    return a * np.exp(-b * x) + c
+                
+                # Calculate parameters
+                max_price = np.max(y)
+                mean_price = np.mean(y)
+                min_price = np.min(y)
+                
+                p0 = [max_price - min_price, 0.00001, min_price]
+                bounds = ([0, 0.0000001, 0], [2 * max_price, 0.001, mean_price])
+                
+                params, _ = optimize.curve_fit(
+                    exp_decay_with_offset, x, y, 
+                    p0=p0, bounds=bounds, 
+                    method='trf', maxfev=10000
+                )
+                
+                a, b, c = params
+                x_smooth = np.linspace(min(x), max(x), 200)
+                y_smooth = exp_decay_with_offset(x_smooth, a, b, c)
+                
+                fig.add_trace(go.Scatter(
+                    x=x_smooth,
+                    y=y_smooth,
+                    mode='lines',
+                    name='Exponential Trend',
+                    line=dict(color='red', width=3),
+                    hoverinfo='none'
+                ))
+            except:
+                # Fallback to polynomial
+                z = np.polyfit(x, y, 2)
+                p = np.poly1d(z)
+                
+                x_smooth = np.linspace(min(x), max(x), 200)
+                y_smooth = p(x_smooth)
+                
+                fig.add_trace(go.Scatter(
+                    x=x_smooth,
+                    y=y_smooth,
+                    mode='lines',
+                    name='Polynomial Trend',
+                    line=dict(color='red', width=3),
+                    hoverinfo='none'
+                ))
+                
+        except Exception as e:
+            logger.warning(f"Error fitting trend curve for km plot: {str(e)}")
     
     return fig
 
@@ -588,7 +750,7 @@ def create_summary_stats(filtered_df, styles):
         ], style=style['card']),
     ], style=style['container'])
 
-def create_dashboard(df, port=8050):
+def create_dashboard(df, manufacturer_name, model_name, port=8050):
     """Create and run an interactive Dash app for visualizing the data"""
     logger.info(f"Creating dashboard on port {port}")
     
@@ -607,7 +769,7 @@ def create_dashboard(df, port=8050):
     # Create the app
     app = dash.Dash(
         __name__, 
-        title="Vehicle Price Analyzer",
+        title=f"{manufacturer_name} {model_name} - Price Analyzer",
         external_stylesheets=external_stylesheets,
         suppress_callback_exceptions=True
     )
@@ -616,7 +778,7 @@ def create_dashboard(df, port=8050):
     app.layout = html.Div([
         # Header
         html.Div([
-            html.H1("Vehicle Price Analysis Dashboard", style={'margin': '0'})
+            html.H1(f"{manufacturer_name} {model_name} Price Analysis", style={'margin': '0'})
         ], style=styles['header']),
         
         # Filter section
@@ -700,10 +862,19 @@ def create_dashboard(df, port=8050):
             html.P("👆 Click on any point in the graph to open the vehicle ad in a new tab")
         ], style=styles['click_instruction']),
         
-        # Graph section
-        html.Div([
-            dcc.Graph(id='price-date-scatter')
-        ], style=styles['graph']),
+        # Tabs for different visualizations
+        dcc.Tabs([
+            dcc.Tab(label='Price by Date', children=[
+                html.Div([
+                    dcc.Graph(id='price-date-scatter')
+                ], style=styles['graph']),
+            ]),
+            dcc.Tab(label='Price by Kilometers', children=[
+                html.Div([
+                    dcc.Graph(id='price-km-scatter')
+                ], style=styles['graph']),
+            ]),
+        ], style=styles['tabs']),
         
         # Summary section
         html.Div([
@@ -770,9 +941,10 @@ def setup_callbacks(app, df, styles):
     def clear_submodel_selection(n_clicks):
         return []
     
-    # Callback to update graph and summary based on filters
+    # Callback to update graphs and summary based on filters
     @app.callback(
         [Output('price-date-scatter', 'figure'),
+         Output('price-km-scatter', 'figure'),
          Output('summary-stats', 'children')],
         [Input('km-filter', 'value'),
          Input('hand-filter', 'value'),
@@ -781,7 +953,7 @@ def setup_callbacks(app, df, styles):
          Input('adtype-filter', 'value')],
         [State('submodel-checklist', 'value')]
     )
-    def update_graph_and_stats(km_range, hand, models, submodel_btn_clicks, adtype, submodel_list):
+    def update_graphs_and_stats(km_range, hand, models, submodel_btn_clicks, adtype, submodel_list):
         # Apply filters
         filtered_df = df.copy()
         
@@ -809,20 +981,21 @@ def setup_callbacks(app, df, styles):
         if adtype != 'all':
             filtered_df = filtered_df[filtered_df['listingType'] == adtype]
         
-        # Create scatter plot
-        fig = create_scatter_plot(filtered_df)
+        # Create scatter plots
+        fig_date = create_scatter_plot_by_date(filtered_df)
+        fig_km = create_scatter_plot_by_km(filtered_df)
         
         # Create summary statistics
         summary = create_summary_stats(filtered_df, styles)
         
-        return fig, summary
+        return fig_date, fig_km, summary
     
     # Client-side callback to open links in new tab
     app.clientside_callback(
         """
         function(clickData) {
             if(clickData && clickData.points && clickData.points.length > 0) {
-                const link = clickData.points[0].customdata[6];
+                const link = clickData.points[0].customdata[6] || clickData.points[0].customdata[5];
                 if(link && link.length > 0) {
                     window.open(link, '_blank');
                 }
@@ -834,12 +1007,54 @@ def setup_callbacks(app, df, styles):
         Input('price-date-scatter', 'clickData'),
         prevent_initial_call=True
     )
+    
+    # Client-side callback to open links in new tab for km scatter plot
+    app.clientside_callback(
+        """
+        function(clickData) {
+            if(clickData && clickData.points && clickData.points.length > 0) {
+                const link = clickData.points[0].customdata[5];
+                if(link && link.length > 0) {
+                    window.open(link, '_blank');
+                }
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('clicked-link', 'data', allow_duplicate=True),
+        Input('price-km-scatter', 'clickData'),
+        prevent_initial_call=True
+    )
+
+def list_all_models():
+    """List all available manufacturers and models"""
+    models_data = vehicle_models.get_all_models()
+    
+    # Format and print the data
+    print("\n=== Available Manufacturers and Models ===\n")
+    
+    for manufacturer in sorted(models_data.keys()):
+        manufacturer_id = models_data[manufacturer]['id']
+        print(f"{manufacturer} (ID: {manufacturer_id}):")
+        
+        models = models_data[manufacturer]['models']
+        for model in sorted(models.keys()):
+            model_id = models[model]
+            print(f"  - {model} (ID: {model_id})")
+            print(f"    Command: python vehicle_analyzer.py --manufacturer {manufacturer_id} --model {model_id}")
+        
+        print()
 
 def main():
     """Main function to run the Vehicle Price Analyzer"""
     try:
         # Parse command line arguments
         args = parse_arguments()
+        
+        # Handle --list-models flag
+        if args.list_models:
+            list_all_models()
+            return
         
         # Create output directory if it doesn't exist
         output_dir = Path(args.output_dir)
@@ -862,12 +1077,19 @@ def main():
         except Exception as e:
             logger.warning(f"Could not remove temporary CSV file: {str(e)}")
         
+        # Get manufacturer and model names
+        manufacturer_name = df['make'].iloc[0] if 'make' in df.columns else "Vehicle"
+        model_name = df['model'].iloc[0] if 'model' in df.columns else "Analysis"
+        
         # Step 4: Create and run the dashboard
-        create_dashboard(df, args.port)
+        create_dashboard(df, manufacturer_name, model_name, args.port)
         
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
     main()
+
