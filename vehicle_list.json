@@ -1,0 +1,26 @@
+[
+    {
+        "manufacturer": 38,
+        "model": 10514,
+        "description": "Default vehicle",
+        "gearBox": 102
+    },
+    {
+        "manufacturer": 46,
+        "model": 10653,
+        "description": "https://www.yad2.co.il/vehicles/cars?carFamilyType=1&manufacturer=46,38,19&model=10653,10221,10514&gearBox=102",
+        "gearBox": 102
+    },
+    {
+        "manufacturer": 38,
+        "model": 10221,
+        "description": "https://www.yad2.co.il/vehicles/cars?carFamilyType=1&manufacturer=46,38,19&model=10653,10221,10514&gearBox=102",
+        "gearBox": 102
+    },
+    {
+        "manufacturer": 19,
+        "model": 10514,
+        "description": "https://www.yad2.co.il/vehicles/cars?carFamilyType=1&manufacturer=46,38,19&model=10653,10221,10514&gearBox=102",
+        "gearBox": 102
+    }
+]

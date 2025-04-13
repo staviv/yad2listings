@@ -43,10 +43,11 @@ def process_vehicle_data(json_list: List[Dict], listing_type: str, output_file: 
     # Define the headers we want to extract
     headers = ['adNumber', 'price', 'city', 'adType', 'model', 'subModel', 
               'productionDate', 'km', 'hand', 'createdAt', 'updatedAt', 
-              'rebouncedAt', 'listingType', 'number_of_years', 'km_per_year', 'description', 'link', 'make', 'hp']
+              'rebouncedAt', 'listingType', 'number_of_years', 'km_per_year', 
+              'description', 'link', 'make', 'hp', 'gearBox', 'testDate']
     
-    # Open the CSV file for writing
-    with open(output_file, mode, newline='', encoding='utf-8') as csvfile:
+    # Open the CSV file for writing with a specific encoding
+    with open(output_file, mode, newline='', encoding='utf-8-sig') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=headers)
         if mode == 'w':  # Only write header if we're creating a new file
             writer.writeheader()
@@ -59,6 +60,11 @@ def process_vehicle_data(json_list: List[Dict], listing_type: str, output_file: 
                 month = get_month_number(item['vehicleDates'].get('monthOfProduction', {"text": "ינואר"})['text'])
                 production_date = f"{year}-{month:02d}-01"  # Format: YYYY-MM-DD
                 
+                # Get test date if it exists
+                test_date = ""
+                if 'testDate' in item['vehicleDates'] and item['vehicleDates']['testDate']:
+                    test_date = format_date(item['vehicleDates']['testDate'])
+                
                 # Calculate years since production
                 years_since_production = calculate_years_since_production(year, month)
                 
@@ -66,9 +72,26 @@ def process_vehicle_data(json_list: List[Dict], listing_type: str, output_file: 
                 km = item['km']
                 km_per_year = round(km / years_since_production if years_since_production > 0 else km, 2)
                 
+                # Get gear type
+                gear_box = ""
+                if 'gearBox' in item and item['gearBox'] and 'text' in item['gearBox']:
+                    gear_box = item['gearBox']['text']
+                
+                # Clean description text of any problematic characters
+                description = item["metaData"]["description"]
+                if description:
+                    # Replace any problematic characters
+                    description = ''.join(c if ord(c) < 128 or c.isalpha() else ' ' for c in description)
+                
+                # Ensure price is a number
+                try:
+                    price = int(item['price'])
+                except (ValueError, TypeError):
+                    price = 0
+                
                 row = {
                     'adNumber': item['adNumber'],
-                    'price': item['price'],
+                    'price': price,  # Ensure this is an integer
                     'city': item['address'].get('city',{"text":""})['text'],
                     'adType': item['adType'],
                     'model': item['model']['text'],
@@ -76,15 +99,17 @@ def process_vehicle_data(json_list: List[Dict], listing_type: str, output_file: 
                     'hp': int(re.search(r'(\d+)\s*כ״ס', item['subModel']['text']).group(1)) if re.search(r'(\d+)\s*כ״ס', item['subModel']['text']) else 0,
                     'make': item['manufacturer']['text'],
                     'productionDate': production_date,
-                    'km': item['km'],
-                    'hand': item['hand']["id"],
+                    'testDate': test_date,
+                    'km': int(item['km']),  # Ensure this is an integer
+                    'hand': int(item["hand"]["id"]),  # Ensure this is an integer
+                    'gearBox': gear_box,
                     'createdAt': format_date(item['dates']['createdAt']),
                     'updatedAt': format_date(item['dates']['updatedAt']),
                     'rebouncedAt': format_date(item['dates']['rebouncedAt']),
                     'listingType': listing_type,
-                    'number_of_years': years_since_production,
-                    'km_per_year': km_per_year,
-                    'description': item["metaData"]["description"],
+                    'number_of_years': float(years_since_production),  # Ensure this is a float
+                    'km_per_year': float(km_per_year),  # Ensure this is a float
+                    'description': description,
                     'link': f'https://www.yad2.co.il/vehicles/item/{item["token"]}',
                 }
                 writer.writerow(row)
@@ -93,6 +118,8 @@ def process_vehicle_data(json_list: List[Dict], listing_type: str, output_file: 
                 print(item)
             except Exception as e:
                 print(f"Error processing item: {e}")
+
+
 
 def process_directory(directory_path: str) -> None:
     """Process all HTML files in a directory and combine the data"""
